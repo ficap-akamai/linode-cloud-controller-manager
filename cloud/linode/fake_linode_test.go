@@ -676,6 +676,29 @@ func (f *fakeAPI) setupRoutes() {
 		rr, _ := json.Marshal(resp)
 		_, _ = w.Write(rr)
 	})
+
+	f.mux.HandleFunc("GET /v4/profile", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer dummyapitoken" {
+			errors := make([]linodego.APIErrorReason, 1)
+			errors[0] = linodego.APIErrorReason{Reason: "Invalid Token"}
+			resp := linodego.APIError{Errors: errors}
+
+			w.WriteHeader(401)
+			rr, _ := json.Marshal(resp)
+			_, _ = w.Write(rr)
+			return
+		}
+
+		resp := linodego.Profile{
+			UID:      0,
+			Username: "foo",
+			Email:    "fake@example.com",
+		}
+
+		w.WriteHeader(200)
+		rr, _ := json.Marshal(resp)
+		_, _ = w.Write(rr)
+	})
 }
 
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {

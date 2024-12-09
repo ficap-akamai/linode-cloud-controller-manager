@@ -27,6 +27,8 @@ const (
 	nodeBalancerLBType = "nodebalancer"
 )
 
+var clientNew = client.New
+
 var supportedLoadBalancerTypes = []string{ciliumLBType, nodeBalancerLBType}
 
 // Options is a configuration object for this cloudprovider implementation.
@@ -80,7 +82,7 @@ func newCloud() (cloudprovider.Interface, error) {
 		}
 	}
 
-	linodeClient, err := client.New(apiToken, timeout)
+	linodeClient, err := clientNew(apiToken, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("client was not created succesfully: %w", err)
 	}
