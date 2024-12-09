@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/linode/linodego"
@@ -56,6 +57,40 @@ type Client interface {
 
 // linodego.Client implements Client
 var _ Client = (*linodego.Client)(nil)
+
+func IsClientAuthenticated(ctx context.Context, client *linodego.Client) error {
+	_, err := client.GetProfile(ctx)
+	return err
+}
+
+func HealthChecker(apiToken string, timeout time.Duration, period time.Duration, stopCh chan struct{}) {
+	ctx := context.TODO()
+	linodeClient, err := New(apiToken, timeout)
+	if err != nil {
+		klog.Errorf("Client creation error: %s", err.Error())
+		close(stopCh)
+		return
+	}
+
+	for {
+		select {
+		case <-stopCh:
+			klog.Info("received stop request. shutting down.")
+			return
+		case <-time.After(period):
+			if err := IsClientAuthenticated(ctx, linodeClient); err != nil {
+				if strings.Contains(err.Error(), "Invalid Token") {
+					klog.Errorf("authenticated connection error: %s Stopping controllers", err.Error())
+					close(stopCh)
+					return
+				}
+				klog.Warningf("ignoring error that is not invalid token: %s", err.Error())
+				continue
+			}
+			klog.Info("linode token is healthy")
+		}
+	}
+}
 
 // New creates a new linode client with a given token and default timeout
 func New(token string, timeout time.Duration) (*linodego.Client, error) {

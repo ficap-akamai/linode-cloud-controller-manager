@@ -1,6 +1,7 @@
 package linode
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net"
@@ -20,7 +21,7 @@ import (
 const (
 	// The name of this cloudprovider
 	ProviderName       = "linode"
-	accessTokenEnv     = "LINODE_API_TOKEN"
+	AccessTokenEnv     = "LINODE_API_TOKEN"
 	regionEnv          = "LINODE_REGION"
 	ciliumLBType       = "cilium-bgp"
 	nodeBalancerLBType = "nodebalancer"
@@ -61,9 +62,9 @@ func init() {
 
 func newCloud() (cloudprovider.Interface, error) {
 	// Read environment variables (from secrets)
-	apiToken := os.Getenv(accessTokenEnv)
+	apiToken := os.Getenv(AccessTokenEnv)
 	if apiToken == "" {
-		return nil, fmt.Errorf("%s must be set in the environment (use a k8s secret)", accessTokenEnv)
+		return nil, fmt.Errorf("%s must be set in the environment (use a k8s secret)", AccessTokenEnv)
 	}
 
 	region := os.Getenv(regionEnv)
@@ -82,6 +83,10 @@ func newCloud() (cloudprovider.Interface, error) {
 	linodeClient, err := client.New(apiToken, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("client was not created succesfully: %w", err)
+	}
+
+	if err := client.IsClientAuthenticated(context.TODO(), linodeClient); err != nil {
+		return nil, fmt.Errorf("linode authenticated connection error. Is token '%s' valid?: %w", AccessTokenEnv, err)
 	}
 
 	if Options.LinodeGoDebug {

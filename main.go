@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
+	"time"
 
 	"k8s.io/component-base/logs"
 
 	"github.com/linode/linode-cloud-controller-manager/cloud/linode"
+	"github.com/linode/linode-cloud-controller-manager/cloud/linode/client"
 	"github.com/linode/linode-cloud-controller-manager/sentry"
 	"github.com/spf13/pflag"
-	"k8s.io/apimachinery/pkg/util/wait"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/app"
 	"k8s.io/cloud-provider/app/config"
@@ -76,7 +78,8 @@ func main() {
 	}
 	fss := utilflag.NamedFlagSets{}
 	controllerAliases := names.CCMControllerAliases()
-	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, app.DefaultInitFuncConstructors, controllerAliases, fss, wait.NeverStop)
+	stopCh := make(chan struct{})
+	command := app.NewCloudControllerManagerCommand(ccmOptions, cloudInitializer, app.DefaultInitFuncConstructors, controllerAliases, fss, stopCh)
 
 	// Add Linode-specific flags
 	command.Flags().BoolVar(&linode.Options.LinodeGoDebug, "linodego-debug", false, "enables debug output for the LinodeAPI wrapper")
@@ -129,11 +132,29 @@ func main() {
 		linode.Options.LinodeExternalNetwork = network
 	}
 
+	apiToken := os.Getenv(linode.AccessTokenEnv)
+	if apiToken == "" {
+		msg := fmt.Sprintf("%s must be set in the environment (use a k8s secret)", linode.AccessTokenEnv)
+		sentry.CaptureError(ctx, fmt.Errorf("%s", msg))
+		fmt.Fprintf(os.Stderr, "%v\n", msg)
+		os.Exit(1)
+	}
+
+	// set timeout used by linodeclient for API calls
+	timeout := client.DefaultClientTimeout
+	if raw, ok := os.LookupEnv("LINODE_REQUEST_TIMEOUT_SECONDS"); ok {
+		if t, err := strconv.Atoi(raw); err == nil && t > 0 {
+			timeout = time.Duration(t) * time.Second
+		}
+	}
+
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 
 	logs.InitLogs()
 	defer logs.FlushLogs()
+
+	go client.HealthChecker(apiToken, timeout, 1*time.Minute, stopCh)
 
 	if err := command.Execute(); err != nil {
 		sentry.CaptureError(ctx, err)
